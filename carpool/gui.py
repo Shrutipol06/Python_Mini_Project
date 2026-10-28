@@ -31,8 +31,8 @@ class ShareRideApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
-        self.geometry("920x620")
-        self.minsize(860, 560)
+        self.geometry("980x640")
+        self.minsize(900, 580)
         self.configure(bg=BG)
         self.db = CarPoolDB()
         self.user = None
@@ -74,12 +74,40 @@ class ShareRideApp(tk.Tk):
     def show_home(self):
         self.user = None
         self.clear()
-        wrap = tk.Frame(self.container, bg=CARD, highlightbackground="#d5deea", highlightthickness=1)
-        wrap.pack(padx=40, pady=30, fill="both", expand=True)
-        tk.Label(wrap, text=APP_NAME, font=("Segoe UI", 26, "bold"), fg=NAVY, bg=CARD).pack(pady=(22, 12))
+        wrap = tk.Frame(self.container, bg=BG)
+        wrap.pack(fill="both", expand=True, padx=28, pady=24)
 
-        notebook = ttk.Notebook(wrap)
-        notebook.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        hero = tk.Frame(wrap, bg=NAVY)
+        hero.pack(side="left", fill="both", expand=True, padx=(0, 16))
+        tk.Label(hero, text=APP_NAME, font=("Segoe UI", 32, "bold"), fg="white", bg=NAVY).pack(
+            pady=(70, 8), padx=32, anchor="w"
+        )
+        tk.Label(
+            hero,
+            text="Share rides. Save time.\nLog in with your email to offer\nor book a seat.",
+            font=("Segoe UI", 13),
+            fg="#d7e4f5",
+            bg=NAVY,
+            justify="left",
+        ).pack(padx=32, anchor="w")
+        tk.Label(
+            hero,
+            text="Use the email and password you registered with.",
+            font=("Segoe UI", 10),
+            fg="#9db4ce",
+            bg=NAVY,
+            justify="left",
+        ).pack(padx=32, pady=(18, 0), anchor="w")
+
+        card = tk.Frame(wrap, bg=CARD, highlightbackground="#d5deea", highlightthickness=1)
+        card.pack(side="right", fill="both", expand=True)
+        tk.Label(card, text="Welcome back", font=("Segoe UI", 20, "bold"), fg=NAVY, bg=CARD).pack(
+            pady=(22, 4)
+        )
+        tk.Label(card, text="Sign in with email and password", font=("Segoe UI", 10), fg=MUTED, bg=CARD).pack()
+
+        notebook = ttk.Notebook(card)
+        notebook.pack(fill="both", expand=True, padx=18, pady=(14, 18))
 
         offer_tab = tk.Frame(notebook, bg=CARD)
         book_tab = tk.Frame(notebook, bg=CARD)
@@ -93,18 +121,20 @@ class ShareRideApp(tk.Tk):
         self._register_form(register_tab)
 
     def _login_form(self, parent, role):
-        phone = self.labeled_entry(parent, "Phone")
+        heading = "Driver login" if role == "driver" else "Passenger login"
+        tk.Label(parent, text=heading, font=("Segoe UI", 12, "bold"), fg=TEXT, bg=CARD).pack(pady=(16, 4))
+        email = self.labeled_entry(parent, "Email")
         password = self.labeled_entry(parent, "Password", show="*")
         color = TEAL if role == "driver" else NAVY
 
         def do_login():
             try:
-                self.user = self.db.login(phone.get().strip(), password.get(), role)
+                self.user = self.db.login(check_email(email.get()), password.get(), role)
                 if role == "driver":
                     self.show_driver()
                 else:
                     self.show_passenger()
-            except DatabaseError as err:
+            except (ValueError, DatabaseError) as err:
                 messagebox.showerror("Login failed", str(err))
 
         self.button(parent, "Login", do_login, color)

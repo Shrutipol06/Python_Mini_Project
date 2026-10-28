@@ -37,6 +37,7 @@ class CarPoolDB:
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self._create_tables()
+        self.purge_expired_rides()
 
     def _create_tables(self):
         self.conn.executescript(
@@ -95,17 +96,36 @@ class CarPoolDB:
         except sqlite3.IntegrityError:
             raise DatabaseError("Phone or email already registered.")
 
-    def login(self, phone, password, role):
+    def login(self, email, password, role):
         row = self.conn.execute(
             """
             SELECT id, name, phone, email, password, role
-            FROM users WHERE phone = ? AND password = ? AND role = ?
+            FROM users WHERE LOWER(email) = ? AND password = ? AND role = ?
             """,
-            (phone, password, role),
+            (email.strip().lower(), password, role),
         ).fetchone()
         if not row:
-            raise DatabaseError("Invalid phone, password, or login type.")
+            raise DatabaseError("Invalid email, password, or login type.")
         return make_user(tuple(row))
+
+    def purge_expired_rides(self):
+        """Permanently remove rides whose date and time have already passed."""
+        now = datetime.now()
+        expired_ids = []
+        for row in self.conn.execute("SELECT id, travel_date, travel_time FROM rides"):
+            try:
+                if ride_datetime(row["travel_date"], row["travel_time"]) <= now:
+                    expired_ids.append(row["id"])
+            except ValueError:
+                continue
+        if not expired_ids:
+            return 0
+        placeholders = ",".join("?" * len(expired_ids))
+        self.conn.execute(f"DELETE FROM bookings WHERE ride_id IN ({placeholders})", expired_ids)
+        self.conn.execute(f"DELETE FROM rides WHERE id IN ({placeholders})", expired_ids)
+        self.conn.commit()
+        self.log(f"Removed {len(expired_ids)} expired ride(s)")
+        return len(expired_ids)
 
     def offer_ride(self, driver_id, origin, destination, travel_date, travel_time, seats, fare):
         when = ride_datetime(travel_date, travel_time)
@@ -157,9 +177,11 @@ class CarPoolDB:
         return [self._ride_from_row(row) for row in rows]
 
     def driver_rides(self, driver_id):
+        self.purge_expired_rides()
         return self._rides_query("WHERE r.driver_id = ?", (driver_id,))
 
     def search_rides(self, origin="", destination="", travel_date=""):
+        self.purge_expired_rides()
         clauses = ["r.status IN ('open', 'full')"]
         params = []
         if origin:
@@ -172,7 +194,14 @@ class CarPoolDB:
             clauses.append("r.travel_date = ?")
             params.append(travel_date)
         rides = self._rides_query("WHERE " + " AND ".join(clauses), tuple(params))
-        return [ride for ride in rides if ride.available > 0 and ride.status == "open"]
+        now = datetime.now()
+        return [
+            ride
+            for ride in rides
+            if ride.available > 0
+            and ride.status == "open"
+            and ride_datetime(ride.travel_date, ride.travel_time) > now
+        ]
 
     def all_open_rides(self):
         return self.search_rides()
